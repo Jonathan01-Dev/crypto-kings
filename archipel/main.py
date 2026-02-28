@@ -562,8 +562,38 @@ def main() -> None:
             print(f"[TRANSFER] Manifest file_id={manifest['file_id']} chunks={manifest['nb_chunks']}")
             _broadcast_manifest(manifest)
 
+
     elif args.command == "download":
         _download_file(args.file_id)
+
+    elif args.command == "receive":
+        files = index.db.get("files", {})
+        if not files:
+            print("Aucun fichier disponible.")
+        else:
+            print("Fichiers disponibles:")
+            for fid, meta in files.items():
+                status = "complet" if meta.get("completed") else "incomplet"
+                print(f"- file_id={fid[:16]}... status={status} chunks={len(meta.get('available_chunks', []))}")
+
+    elif args.command == "status":
+        print(f"Noeud: {node_id[:16]}... port={args.port}")
+        peers = peer_table.get_peers()
+        print(f"Pairs connus: {len(peers)}")
+        files = index.db.get("files", {})
+        print(f"Fichiers: {len(files)}")
+        for fid, meta in files.items():
+            print(f"- file_id={fid[:16]}... completed={meta.get('completed', False)} chunks={len(meta.get('available_chunks', []))}")
+
+    elif args.command == "trust":
+        peer = peer_table.get_peer(args.peer_id)
+        if not peer:
+            print("Pair inconnu.")
+        else:
+            pub_hex = peer["node_id"]
+            pub_bytes = bytes.fromhex(pub_hex)
+            trust_store.trust(pub_hex, pub_bytes)
+            print(f"Pair {args.peer_id[:16]}... approuve dans le Web of Trust.")
 
     discovery.stop()
     server.stop()

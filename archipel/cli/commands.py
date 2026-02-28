@@ -33,6 +33,16 @@ class CLI:
         self._add_common_args(download_parser)
         download_parser.add_argument("file_id", help="ID du fichier a telecharger")
 
+            receive_parser = subparsers.add_parser("receive", help="Voir les fichiers disponibles")
+            self._add_common_args(receive_parser)
+
+            status_parser = subparsers.add_parser("status", help="Etat du noeud + stats reseau")
+            self._add_common_args(status_parser)
+
+            trust_parser = subparsers.add_parser("trust", help="Approuver un pair (Web of Trust)")
+            self._add_common_args(trust_parser)
+            trust_parser.add_argument("peer_id", help="ID du pair a approuver")
+
     @staticmethod
     def _add_common_args(parser):
         parser.add_argument(
