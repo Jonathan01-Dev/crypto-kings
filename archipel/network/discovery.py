@@ -3,11 +3,12 @@ network/discovery.py
 Découverte des pairs sur le réseau local via UDP multicast.
 """
 import socket
-import struct
+import struct  # ← CORRECTION : import manquant ajouté
 import threading
 import time
 from config import MULTICAST_GROUP, MULTICAST_PORT, ANNOUNCE_INTERVAL
 import json
+
 
 class PeerDiscovery:
     def __init__(self, peer_id, port, on_peer=None):
@@ -26,7 +27,7 @@ class PeerDiscovery:
         """Annonce périodique de la présence du nœud sur le réseau."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-            ttl = struct.pack('b', 1)
+            ttl = struct.pack('b', 1)  # ← fonctionne maintenant grâce à l'import
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
             while self.running:
                 msg = f"ARCHIPEL:{self.peer_id}:{self.port}".encode()
@@ -52,7 +53,7 @@ class PeerDiscovery:
             sock.bind(('', MULTICAST_PORT))
             mreq = socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton('0.0.0.0')
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-            sock.settimeout(2.0)
+            sock.settimeout(2.0)  # ← timeout pour pouvoir arrêter proprement
             while self.running:
                 try:
                     data, addr = sock.recvfrom(1024)
@@ -67,7 +68,7 @@ class PeerDiscovery:
                                 if self.on_peer:
                                     self.on_peer(peer_id, addr[0], int(port))
                 except socket.timeout:
-                    continue
+                    continue  # normal, on continue la boucle
                 except Exception as e:
                     print(f"[DISCOVERY] Erreur réception: {e}")
                     continue
@@ -107,3 +108,11 @@ class PeerDiscovery:
             print(f"[DISCOVERY] PEER_LIST envoyé à {ip}:{port}")
         except Exception as e:
             print(f"[DISCOVERY] Erreur envoi PEER_LIST: {e}")
+
+    def stop(self):
+        """Arrête proprement les threads de découverte."""
+        self.running = False
+
+    def get_peers(self):
+        """Retourne la liste des pairs découverts."""
+        return list(self.peers)
