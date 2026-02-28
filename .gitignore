@@ -11,3 +11,5 @@ archipel/trust_store_*.json
 archipel/.venv/
 archipel/*.log
 archipel/*.err
+archipel/.archipel/
+archipel/downloads/
