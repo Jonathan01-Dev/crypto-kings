@@ -1,57 +1,49 @@
-# Archipel - Lancement rapide
+# Archipel - Sprint 1
 
-## 1) Installer la dependance
+Objectif Sprint 1: discovery mesh en LAN (HELLO multicast + PEER_LIST unicast TCP).
+
+## Setup
 
 ```bash
 pip install cryptography
 ```
 
-## 2) Ouvrir le reseau local
+Optionnel: fichier `.env` a cote de `main.py`.
 
-- Toutes les machines doivent etre sur le meme LAN.
-- Autoriser UDP `6000` (multicast discovery) et TCP `5007` (messages).
-
-## 3) Demarrer un noeud serveur
-
-```bash
-python main.py start --port 5007
+```env
+ARCHIPEL_TCP_PORT=7777
+ARCHIPEL_MULTICAST_GROUP=239.255.42.99
+ARCHIPEL_MULTICAST_PORT=6000
+ARCHIPEL_ANNOUNCE_INTERVAL=30
+ARCHIPEL_PEER_TIMEOUT=90
 ```
 
-Le processus reste actif. Arret avec `Ctrl+C`.
+## Lancer 3 noeuds (meme machine)
 
-## 4) Tester sur une seule machine (2 terminaux)
-
-Terminal A:
+Terminal 1:
 
 ```bash
-python main.py start --port 5007
+python main.py start --port 7777
 ```
 
-Terminal B:
+Terminal 2:
 
 ```bash
-python main.py start --port 5008
+python main.py start --port 7778
 ```
 
-## 5) Lister les pairs
-
-Depuis un 3e terminal:
+Terminal 3:
 
 ```bash
-python main.py peers --port 5010 --wait 3
+python main.py start --port 7779
 ```
 
-## 6) Envoyer un message
+## Verifier la peer table
 
-1. Recuperer un `peer_id` via la commande `peers`.
-2. Envoyer:
+Dans un 4e terminal:
 
 ```bash
-python main.py msg <peer_id> "Hello Archipel!" --port 5010 --wait 3
+python main.py peers --port 7780 --wait 35
 ```
 
-## 7) Envoyer un fichier (prototype)
-
-```bash
-python main.py send <peer_id> <chemin_du_fichier> --port 5010 --wait 3
-```
+Attendu: les 3 noeuds se voient en moins de 60 secondes.

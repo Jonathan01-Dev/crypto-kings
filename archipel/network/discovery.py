@@ -1,118 +1,115 @@
 """
 network/discovery.py
-Découverte des pairs sur le réseau local via UDP multicast.
+Decouverte de pairs via UDP multicast + reponse PEER_LIST en TCP unicast.
 """
+
+from __future__ import annotations
+
+import json
 import socket
-import struct  # ← CORRECTION : import manquant ajouté
+import struct
 import threading
 import time
-from config import MULTICAST_GROUP, MULTICAST_PORT, ANNOUNCE_INTERVAL
-import json
+
+from config import ANNOUNCE_INTERVAL, MULTICAST_GROUP, MULTICAST_PORT, PEER_TIMEOUT
+from network.peer_table import PeerTable
+from network.protocol import TYPE_PEER_LIST, send_tlv
 
 
 class PeerDiscovery:
-    def __init__(self, peer_id, port, on_peer=None):
-        self.peer_id = peer_id
-        self.port = port
+    def __init__(self, node_id: str, tcp_port: int, peer_table: PeerTable):
+        self.node_id = node_id
+        self.tcp_port = tcp_port
+        self.peer_table = peer_table
         self.running = False
-        self.peers = set()
-        self.on_peer = on_peer  # callback pour ajout auto dans PeerTable
 
-    def start(self):
+    def start(self) -> None:
         self.running = True
-        threading.Thread(target=self._announce, daemon=True).start()
-        threading.Thread(target=self._listen, daemon=True).start()
+        threading.Thread(target=self._announce_loop, daemon=True).start()
+        threading.Thread(target=self._listen_loop, daemon=True).start()
+        threading.Thread(target=self._timeout_loop, daemon=True).start()
 
-    def _announce(self):
-        """Annonce périodique de la présence du nœud sur le réseau."""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-            ttl = struct.pack('b', 1)  # ← fonctionne maintenant grâce à l'import
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-            while self.running:
-                msg = f"ARCHIPEL:{self.peer_id}:{self.port}".encode()
-                try:
-                    sock.sendto(msg, (MULTICAST_GROUP, MULTICAST_PORT))
-                    print(f"[DISCOVERY] Annonce envoyée: {msg}")
-                except Exception as e:
-                    print(f"[DISCOVERY] Erreur lors de l'envoi: {e}")
-                time.sleep(ANNOUNCE_INTERVAL)
-        except Exception as e:
-            print(f"[DISCOVERY] Erreur thread annonce: {e}")
-        finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
-
-    def _listen(self):
-        """Écoute les annonces des autres pairs."""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(('', MULTICAST_PORT))
-            mreq = socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton('0.0.0.0')
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-            sock.settimeout(2.0)  # ← timeout pour pouvoir arrêter proprement
-            while self.running:
-                try:
-                    data, addr = sock.recvfrom(1024)
-                    msg = data.decode()
-                    if msg.startswith("ARCHIPEL:"):
-                        parts = msg.split(":")
-                        if len(parts) == 3:
-                            _, peer_id, port = parts
-                            if peer_id != self.peer_id:
-                                print(f"[DISCOVERY] Pair découvert: {peer_id} @ {addr[0]}:{port}")
-                                self.peers.add((peer_id, addr[0], int(port)))
-                                if self.on_peer:
-                                    self.on_peer(peer_id, addr[0], int(port))
-                except socket.timeout:
-                    continue  # normal, on continue la boucle
-                except Exception as e:
-                    print(f"[DISCOVERY] Erreur réception: {e}")
-                    continue
-        except Exception as e:
-            print(f"[DISCOVERY] Erreur thread écoute: {e}")
-        finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
-
-    def _timeout_check(self):
-        """Retire les pairs non vus depuis 90s."""
-        TIMEOUT = 90
-        while self.running:
-            now = time.time()
-            to_remove = []
-            if isinstance(self.peers, dict):
-                to_remove = [pid for pid, info in self.peers.items() if now - info.get('last_seen', now) > TIMEOUT]
-                for pid in to_remove:
-                    print(f"[DISCOVERY] Pair expiré: {pid}")
-                    self.peers.pop(pid)
-                    if self.peer_table:
-                        self.peer_table.remove_peer(pid)
-            time.sleep(10)
-
-    def _reply_with_peer_list(self, ip, port):
-        """Envoie la liste des pairs connus en TCP (PEER_LIST)."""
-        try:
-            peer_list = []
-            if isinstance(self.peers, dict):
-                peer_list = [{'node_id': pid, 'ip': info['ip'], 'port': info['port']} for pid, info in self.peers.items()]
-            pkt = json.dumps({'type': 'PEER_LIST', 'peers': peer_list}).encode()
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((ip, port))
-                s.sendall(pkt)
-            print(f"[DISCOVERY] PEER_LIST envoyé à {ip}:{port}")
-        except Exception as e:
-            print(f"[DISCOVERY] Erreur envoi PEER_LIST: {e}")
-
-    def stop(self):
-        """Arrête proprement les threads de découverte."""
+    def stop(self) -> None:
         self.running = False
 
-    def get_peers(self):
-        """Retourne la liste des pairs découverts."""
-        return list(self.peers)
+    def _announce_loop(self) -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        ttl = struct.pack("b", 1)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        try:
+            while self.running:
+                pkt = {
+                    "type": "HELLO",
+                    "node_id": self.node_id,
+                    "tcp_port": self.tcp_port,
+                    "timestamp": int(time.time() * 1000),
+                }
+                payload = json.dumps(pkt).encode("utf-8")
+                try:
+                    sock.sendto(payload, (MULTICAST_GROUP, MULTICAST_PORT))
+                    print(f"[DISCOVERY] HELLO sent node={self.node_id[:12]} tcp={self.tcp_port}")
+                except Exception as exc:
+                    print(f"[DISCOVERY] HELLO send error: {exc}")
+                time.sleep(ANNOUNCE_INTERVAL)
+        finally:
+            sock.close()
+
+    def _listen_loop(self) -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("", MULTICAST_PORT))
+        membership = socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton("0.0.0.0")
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, membership)
+        sock.settimeout(2.0)
+        try:
+            while self.running:
+                try:
+                    data, addr = sock.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                except Exception as exc:
+                    print(f"[DISCOVERY] recv error: {exc}")
+                    continue
+
+                try:
+                    pkt = json.loads(data.decode("utf-8"))
+                except Exception:
+                    continue
+
+                if pkt.get("type") != "HELLO":
+                    continue
+
+                node_id = pkt.get("node_id")
+                peer_tcp_port = int(pkt.get("tcp_port", 0))
+                if not node_id or node_id == self.node_id or peer_tcp_port <= 0:
+                    continue
+
+                peer_ip = addr[0]
+                self.peer_table.upsert_peer(node_id=node_id, ip=peer_ip, tcp_port=peer_tcp_port)
+                print(f"[DISCOVERY] Peer seen {node_id[:12]} @ {peer_ip}:{peer_tcp_port}")
+                self._reply_with_peer_list(peer_ip, peer_tcp_port)
+        finally:
+            sock.close()
+
+    def _reply_with_peer_list(self, ip: str, port: int) -> None:
+        packet = {
+            "type": "PEER_LIST",
+            "node_id": self.node_id,
+            "peers": self.peer_table.as_list(),
+            "timestamp": int(time.time() * 1000),
+        }
+        payload = json.dumps(packet).encode("utf-8")
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2.0)
+                sock.connect((ip, port))
+                send_tlv(sock, TYPE_PEER_LIST, payload)
+        except Exception as exc:
+            print(f"[DISCOVERY] PEER_LIST send error to {ip}:{port}: {exc}")
+
+    def _timeout_loop(self) -> None:
+        while self.running:
+            removed = self.peer_table.prune_stale(PEER_TIMEOUT)
+            for node_id in removed:
+                print(f"[DISCOVERY] Peer timeout {node_id[:12]}")
+            time.sleep(5)

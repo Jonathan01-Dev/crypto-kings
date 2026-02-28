@@ -1,0 +1,8 @@
+archipel/**/__pycache__/
+archipel/**/*.pyc
+archipel/private.pem
+archipel/public.pem
+archipel/peer_table.json
+archipel/peer_table_*.json
+archipel/node_id_*.txt
+archipel/.venv/
