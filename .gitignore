@@ -5,4 +5,9 @@ archipel/public.pem
 archipel/peer_table.json
 archipel/peer_table_*.json
 archipel/node_id_*.txt
+archipel/identity_ed25519_*.pem
+archipel/identity_ed25519_*.pub.pem
+archipel/trust_store_*.json
 archipel/.venv/
+archipel/*.log
+archipel/*.err

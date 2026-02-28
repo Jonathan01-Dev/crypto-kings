@@ -14,7 +14,7 @@ from config import KEEPALIVE_INTERVAL, KEEPALIVE_TIMEOUT, TCP_MAX_CONNECTIONS
 from network.protocol import TYPE_PING, TYPE_PONG, recv_tlv, send_tlv
 
 
-PacketHandler = Callable[[int, bytes, tuple[str, int]], None]
+PacketHandler = Callable[[int, bytes, tuple[str, int], socket.socket], None]
 
 
 class TCPServer:
@@ -93,4 +93,5 @@ class TCPServer:
                     last_pong = time.time()
                     continue
 
-                self.handler(packet_type, payload, addr)
+                print(f"[TCP] packet type={packet_type} from {addr[0]}:{addr[1]}")
+                self.handler(packet_type, payload, addr, conn)

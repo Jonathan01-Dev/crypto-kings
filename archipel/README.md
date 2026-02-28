@@ -1,6 +1,11 @@
-# Archipel - Sprint 1
+# Archipel - Sprint 2
 
-Objectif Sprint 1: discovery mesh en LAN (HELLO multicast + PEER_LIST unicast TCP).
+Sprint 2 ajoute:
+- Identite noeud Ed25519 (signature)
+- Handshake ephemere X25519 + HKDF
+- Tunnel message AES-256-GCM
+- Integrite HMAC-SHA256
+- TOFU (Trust On First Use) sans CA
 
 ## Setup
 
@@ -8,42 +13,41 @@ Objectif Sprint 1: discovery mesh en LAN (HELLO multicast + PEER_LIST unicast TC
 pip install cryptography
 ```
 
-Optionnel: fichier `.env` a cote de `main.py`.
-
-```env
-ARCHIPEL_TCP_PORT=7777
-ARCHIPEL_MULTICAST_GROUP=239.255.42.99
-ARCHIPEL_MULTICAST_PORT=6000
-ARCHIPEL_ANNOUNCE_INTERVAL=30
-ARCHIPEL_PEER_TIMEOUT=90
-```
-
-## Lancer 3 noeuds (meme machine)
-
-Terminal 1:
-
-```bash
-python main.py start --port 7777
-```
-
-Terminal 2:
+## Lancer Bob
 
 ```bash
 python main.py start --port 7778
 ```
 
-Terminal 3:
+## Lancer Alice
 
 ```bash
-python main.py start --port 7779
+python main.py start --port 7777
 ```
 
-## Verifier la peer table
-
-Dans un 4e terminal:
+## Recuperer les peers (depuis Alice)
 
 ```bash
 python main.py peers --port 7780 --wait 35
 ```
 
-Attendu: les 3 noeuds se voient en moins de 60 secondes.
+## Envoyer un message chiffre (Alice -> Bob)
+
+```bash
+python main.py msg <peer_id_de_bob> "Bonjour Bob (Sprint 2)" --port 7777 --wait 1
+```
+
+## Test 3 noeuds
+
+```bash
+python main.py start --port 7777
+python main.py start --port 7778
+python main.py start --port 7779
+python main.py peers --port 7780 --wait 35
+```
+
+Attendu:
+- Discovery en moins de 60 secondes
+- Peer table affichee
+- Message recu en clair uniquement sur le noeud destinataire
+- Capture reseau: octets chiffrés (AES-GCM), jamais le plaintext
